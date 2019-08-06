@@ -71,7 +71,6 @@ import io.grpc.grpclb.GrpclbState.DropEntry;
 import io.grpc.grpclb.GrpclbState.ErrorEntry;
 import io.grpc.grpclb.GrpclbState.IdleSubchannelEntry;
 import io.grpc.grpclb.GrpclbState.Mode;
-import io.grpc.grpclb.GrpclbState.RoundRobinEntry;
 import io.grpc.grpclb.GrpclbState.RoundRobinPicker;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.inprocess.InProcessServerBuilder;
@@ -194,7 +193,7 @@ public class GrpclbLoadBalancerTest {
   private BackoffPolicy backoffPolicy2;
   private GrpclbLoadBalancer balancer;
 
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings({"unchecked", "deprecation"})
   @Before
   public void setUp() throws Exception {
     MockitoAnnotations.initMocks(this);
@@ -263,6 +262,8 @@ public class GrpclbLoadBalancerTest {
           unpooledSubchannelTracker.add(subchannel);
           return subchannel;
         }
+        // TODO(zhangkun83): remove the deprecation suppression on this method once migrated to
+        // the new createSubchannel().
       }).when(helper).createSubchannel(any(List.class), any(Attributes.class));
     when(helper.getSynchronizationContext()).thenReturn(syncContext);
     when(helper.getScheduledExecutorService()).thenReturn(fakeClock.getScheduledExecutorService());
@@ -419,7 +420,7 @@ public class GrpclbLoadBalancerTest {
   @Test
   public void roundRobinPickerWithIdleEntry_noDrop() {
     Subchannel subchannel = mock(Subchannel.class);
-    IdleSubchannelEntry entry = new IdleSubchannelEntry(subchannel);
+    IdleSubchannelEntry entry = new IdleSubchannelEntry(subchannel, syncContext);
 
     RoundRobinPicker picker =
         new RoundRobinPicker(Collections.<DropEntry>emptyList(), Collections.singletonList(entry));
@@ -427,6 +428,9 @@ public class GrpclbLoadBalancerTest {
 
     verify(subchannel, never()).requestConnection();
     assertThat(picker.pickSubchannel(args)).isSameInstanceAs(PickResult.withNoResult());
+    verify(subchannel).requestConnection();
+    assertThat(picker.pickSubchannel(args)).isSameInstanceAs(PickResult.withNoResult());
+    // Only the first pick triggers requestConnection()
     verify(subchannel).requestConnection();
   }
 
@@ -439,7 +443,7 @@ public class GrpclbLoadBalancerTest {
     List<DropEntry> dropList = Arrays.asList(null, d);
 
     Subchannel subchannel = mock(Subchannel.class);
-    IdleSubchannelEntry entry = new IdleSubchannelEntry(subchannel);
+    IdleSubchannelEntry entry = new IdleSubchannelEntry(subchannel, syncContext);
 
     RoundRobinPicker picker = new RoundRobinPicker(dropList, Collections.singletonList(entry));
     PickSubchannelArgs args = mock(PickSubchannelArgs.class);
@@ -452,27 +456,8 @@ public class GrpclbLoadBalancerTest {
 
     verify(subchannel).requestConnection();
     assertThat(picker.pickSubchannel(args)).isSameInstanceAs(PickResult.withNoResult());
-    verify(subchannel, times(2)).requestConnection();
-  }
-
-  @Test
-  public void roundRobinPicker_requestConnection() {
-    // requestConnection() on RoundRobinPicker is only passed to IdleSubchannelEntry
-
-    Subchannel subchannel1 = mock(Subchannel.class);
-    Subchannel subchannel2 = mock(Subchannel.class);
-
-    RoundRobinPicker picker = new RoundRobinPicker(
-        Collections.<DropEntry>emptyList(),
-        Arrays.<RoundRobinEntry>asList(
-            new BackendEntry(subchannel1), new IdleSubchannelEntry(subchannel2),
-            new ErrorEntry(Status.UNAVAILABLE)));
-
-    verify(subchannel2, never()).requestConnection();
-
-    picker.requestConnection();
-    verify(subchannel2).requestConnection();
-    verify(subchannel1, never()).requestConnection();
+    // Only the first pick triggers requestConnection()
+    verify(subchannel).requestConnection();
   }
 
   @Test
@@ -1701,7 +1686,7 @@ public class GrpclbLoadBalancerTest {
     verify(helper, times(4)).refreshNameResolution();
   }
 
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings({"unchecked", "deprecation"})
   @Test
   public void grpclbWorking_pickFirstMode() throws Exception {
     InOrder inOrder = inOrder(helper);
@@ -1732,6 +1717,8 @@ public class GrpclbLoadBalancerTest {
     lbResponseObserver.onNext(buildInitialResponse());
     lbResponseObserver.onNext(buildLbResponse(backends1));
 
+    // TODO(zhangkun83): remove the deprecation suppression on this method once migrated to
+    // the new createSubchannel().
     inOrder.verify(helper).createSubchannel(
         eq(Arrays.asList(
                 new EquivalentAddressGroup(backends1.get(0).addr, eagAttrsWithToken("token0001")),
@@ -1746,7 +1733,7 @@ public class GrpclbLoadBalancerTest {
     assertThat(mockSubchannels).hasSize(1);
     Subchannel subchannel = mockSubchannels.poll();
     assertThat(picker0.dropList).containsExactly(null, null);
-    assertThat(picker0.pickList).containsExactly(new IdleSubchannelEntry(subchannel));
+    assertThat(picker0.pickList).containsExactly(new IdleSubchannelEntry(subchannel, syncContext));
 
     // PICK_FIRST doesn't eagerly connect
     verify(subchannel, never()).requestConnection();
@@ -1789,8 +1776,7 @@ public class GrpclbLoadBalancerTest {
     // createSubchannel() has ever been called only once
     verify(helper, times(1)).createSubchannel(any(List.class), any(Attributes.class));
     assertThat(mockSubchannels).isEmpty();
-    inOrder.verify(helper).updateSubchannelAddresses(
-        same(subchannel),
+    verify(subchannel).updateAddresses(
         eq(Arrays.asList(
                 new EquivalentAddressGroup(backends2.get(0).addr, eagAttrsWithToken("token0001")),
                 new EquivalentAddressGroup(backends2.get(2).addr,
@@ -1815,7 +1801,7 @@ public class GrpclbLoadBalancerTest {
     verify(subchannel).requestConnection();
 
     // ... or requested by application
-    picker5.requestConnection();
+    balancer.requestConnection();
     verify(subchannel, times(2)).requestConnection();
 
     // PICK_FIRST doesn't use subchannelPool
@@ -1825,7 +1811,7 @@ public class GrpclbLoadBalancerTest {
         .returnSubchannel(any(Subchannel.class), any(ConnectivityStateInfo.class));
   }
 
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings({"unchecked", "deprecation"})
   @Test
   public void pickFirstMode_fallback() throws Exception {
     InOrder inOrder = inOrder(helper);
@@ -1849,6 +1835,8 @@ public class GrpclbLoadBalancerTest {
     fakeClock.forwardTime(GrpclbState.FALLBACK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
     // Entering fallback mode
+    // TODO(zhangkun83): remove the deprecation suppression on this method once migrated to
+    // the new createSubchannel().
     inOrder.verify(helper).createSubchannel(
         eq(Arrays.asList(grpclbResolutionList.get(0), grpclbResolutionList.get(2))),
         any(Attributes.class));
@@ -1869,7 +1857,7 @@ public class GrpclbLoadBalancerTest {
         new BackendEntry(subchannel, new TokenAttachingTracerFactory(null)));
 
     assertThat(picker0.dropList).containsExactly(null, null);
-    assertThat(picker0.pickList).containsExactly(new IdleSubchannelEntry(subchannel));
+    assertThat(picker0.pickList).containsExactly(new IdleSubchannelEntry(subchannel, syncContext));
 
 
     // Finally, an LB response, which brings us out of fallback
@@ -1885,8 +1873,7 @@ public class GrpclbLoadBalancerTest {
     // createSubchannel() has ever been called only once
     verify(helper, times(1)).createSubchannel(any(List.class), any(Attributes.class));
     assertThat(mockSubchannels).isEmpty();
-    inOrder.verify(helper).updateSubchannelAddresses(
-        same(subchannel),
+    verify(subchannel).updateAddresses(
         eq(Arrays.asList(
                 new EquivalentAddressGroup(backends1.get(0).addr, eagAttrsWithToken("token0001")),
                 new EquivalentAddressGroup(backends1.get(1).addr,
@@ -1904,6 +1891,7 @@ public class GrpclbLoadBalancerTest {
         .returnSubchannel(any(Subchannel.class), any(ConnectivityStateInfo.class));
   }
 
+  @SuppressWarnings("deprecation")
   @Test
   public void switchMode() throws Exception {
     InOrder inOrder = inOrder(helper);
@@ -1981,6 +1969,8 @@ public class GrpclbLoadBalancerTest {
     lbResponseObserver.onNext(buildLbResponse(backends1));
 
     // PICK_FIRST Subchannel
+    // TODO(zhangkun83): remove the deprecation suppression on this method once migrated to
+    // the new createSubchannel().
     inOrder.verify(helper).createSubchannel(
         eq(Arrays.asList(
                 new EquivalentAddressGroup(backends1.get(0).addr, eagAttrsWithToken("token0001")),
@@ -2065,11 +2055,14 @@ public class GrpclbLoadBalancerTest {
     assertThat(mode).isEqualTo(Mode.ROUND_ROBIN);
   }
 
+  @SuppressWarnings("deprecation")
   private void deliverSubchannelState(
       final Subchannel subchannel, final ConnectivityStateInfo newState) {
     syncContext.execute(new Runnable() {
         @Override
         public void run() {
+          // TODO(zhangkun83): remove the deprecation suppression on this method once migrated to
+          // the new API.
           balancer.handleSubchannelState(subchannel, newState);
         }
       });

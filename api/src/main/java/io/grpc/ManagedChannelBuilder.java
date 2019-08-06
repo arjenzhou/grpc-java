@@ -281,9 +281,7 @@ public abstract class ManagedChannelBuilder<T extends ManagedChannelBuilder<T>> 
    *
    * <p>In idle mode the channel shuts down all connections, the NameResolver and the
    * LoadBalancer. A new RPC would take the channel out of idle mode. A channel starts in idle mode.
-   *
-   * <p>By default the channel will never go to idle mode after it leaves the initial idle
-   * mode.
+   * Defaults to 30 minutes.
    *
    * <p>This is an advisory option. Do not rely on any specific behavior related to this option.
    *
@@ -470,7 +468,7 @@ public abstract class ManagedChannelBuilder<T extends ManagedChannelBuilder<T>> 
    * Enables the retry and hedging mechanism provided by the gRPC library.
    *
    * <p>For the current release, this method may have a side effect that disables Census stats and
-   * tracing. Hedging support is not implemented yet.
+   * tracing.
    *
    * @return this
    * @since 1.11.0

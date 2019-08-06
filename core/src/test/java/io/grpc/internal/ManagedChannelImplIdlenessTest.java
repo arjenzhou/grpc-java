@@ -38,15 +38,18 @@ import io.grpc.CallOptions;
 import io.grpc.ChannelLogger;
 import io.grpc.ClientCall;
 import io.grpc.ClientInterceptor;
+import io.grpc.ConnectivityState;
 import io.grpc.EquivalentAddressGroup;
 import io.grpc.IntegerMarshaller;
 import io.grpc.LoadBalancer;
+import io.grpc.LoadBalancer.CreateSubchannelArgs;
 import io.grpc.LoadBalancer.Helper;
 import io.grpc.LoadBalancer.PickResult;
 import io.grpc.LoadBalancer.PickSubchannelArgs;
 import io.grpc.LoadBalancer.ResolvedAddresses;
 import io.grpc.LoadBalancer.Subchannel;
 import io.grpc.LoadBalancer.SubchannelPicker;
+import io.grpc.LoadBalancer.SubchannelStateListener;
 import io.grpc.LoadBalancerProvider;
 import io.grpc.LoadBalancerRegistry;
 import io.grpc.ManagedChannel;
@@ -113,6 +116,7 @@ public class ManagedChannelImplIdlenessTest {
 
   @Mock private ClientTransportFactory mockTransportFactory;
   @Mock private LoadBalancer mockLoadBalancer;
+  @Mock private SubchannelStateListener subchannelStateListener;
   private final LoadBalancerProvider mockLoadBalancerProvider =
       mock(LoadBalancerProvider.class, delegatesTo(new LoadBalancerProvider() {
           @Override
@@ -310,14 +314,14 @@ public class ManagedChannelImplIdlenessTest {
 
     // Assume LoadBalancer has received an address, then create a subchannel.
     Subchannel subchannel = createSubchannelSafely(helper, addressGroup, Attributes.EMPTY);
-    subchannel.requestConnection();
+    requestConnectionSafely(helper, subchannel);
     MockClientTransportInfo t0 = newTransports.poll();
     t0.listener.transportReady();
 
     SubchannelPicker mockPicker = mock(SubchannelPicker.class);
     when(mockPicker.pickSubchannel(any(PickSubchannelArgs.class)))
         .thenReturn(PickResult.withSubchannel(subchannel));
-    helper.updateBalancingState(READY, mockPicker);
+    updateBalancingStateSafely(helper, READY, mockPicker);
     // Delayed transport creates real streams in the app executor
     executor.runDueTasks();
 
@@ -350,13 +354,13 @@ public class ManagedChannelImplIdlenessTest {
     Helper helper = helperCaptor.getValue();
     Subchannel subchannel = createSubchannelSafely(helper, servers.get(0), Attributes.EMPTY);
 
-    subchannel.requestConnection();
+    requestConnectionSafely(helper, subchannel);
     MockClientTransportInfo t0 = newTransports.poll();
     t0.listener.transportReady();
 
-    helper.updateSubchannelAddresses(subchannel, servers.get(1));
+    updateSubchannelAddressesSafely(helper, subchannel, servers.get(1));
 
-    subchannel.requestConnection();
+    requestConnectionSafely(helper, subchannel);
     MockClientTransportInfo t1 = newTransports.poll();
     t1.listener.transportReady();
   }
@@ -370,15 +374,15 @@ public class ManagedChannelImplIdlenessTest {
     Helper helper = helperCaptor.getValue();
     Subchannel subchannel = createSubchannelSafely(helper, servers.get(0), Attributes.EMPTY);
 
-    subchannel.requestConnection();
+    requestConnectionSafely(helper, subchannel);
     MockClientTransportInfo t0 = newTransports.poll();
     t0.listener.transportReady();
 
     List<SocketAddress> changedList = new ArrayList<>(servers.get(0).getAddresses());
     changedList.add(new FakeSocketAddress("aDifferentServer"));
-    helper.updateSubchannelAddresses(subchannel, new EquivalentAddressGroup(changedList));
+    updateSubchannelAddressesSafely(helper, subchannel, new EquivalentAddressGroup(changedList));
 
-    subchannel.requestConnection();
+    requestConnectionSafely(helper, subchannel);
     assertNull(newTransports.poll());
   }
 
@@ -397,7 +401,7 @@ public class ManagedChannelImplIdlenessTest {
     SubchannelPicker failingPicker = mock(SubchannelPicker.class);
     when(failingPicker.pickSubchannel(any(PickSubchannelArgs.class)))
         .thenReturn(PickResult.withError(Status.UNAVAILABLE));
-    helper.updateBalancingState(TRANSIENT_FAILURE, failingPicker);
+    updateBalancingStateSafely(helper, TRANSIENT_FAILURE, failingPicker);
     executor.runDueTasks();
     verify(mockCallListener).onClose(same(Status.UNAVAILABLE), any(Metadata.class));
 
@@ -499,17 +503,54 @@ public class ManagedChannelImplIdlenessTest {
     }
   }
 
-  // We need this because createSubchannel() should be called from the SynchronizationContext
-  private static Subchannel createSubchannelSafely(
+  // Helper methods to call methods from SynchronizationContext
+  private Subchannel createSubchannelSafely(
       final Helper helper, final EquivalentAddressGroup addressGroup, final Attributes attrs) {
     final AtomicReference<Subchannel> resultCapture = new AtomicReference<>();
     helper.getSynchronizationContext().execute(
         new Runnable() {
           @Override
           public void run() {
-            resultCapture.set(helper.createSubchannel(addressGroup, attrs));
+            Subchannel s = helper.createSubchannel(CreateSubchannelArgs.newBuilder()
+                .setAddresses(addressGroup)
+                .setAttributes(attrs)
+                .build());
+            s.start(subchannelStateListener);
+            resultCapture.set(s);
           }
         });
     return resultCapture.get();
+  }
+
+  private static void requestConnectionSafely(Helper helper, final Subchannel subchannel) {
+    helper.getSynchronizationContext().execute(
+        new Runnable() {
+          @Override
+          public void run() {
+            subchannel.requestConnection();
+          }
+        });
+  }
+
+  private static void updateBalancingStateSafely(
+      final Helper helper, final ConnectivityState state, final SubchannelPicker picker) {
+    helper.getSynchronizationContext().execute(
+        new Runnable() {
+          @Override
+          public void run() {
+            helper.updateBalancingState(state, picker);
+          }
+        });
+  }
+
+  private static void updateSubchannelAddressesSafely(
+      final Helper helper, final Subchannel subchannel, final EquivalentAddressGroup addrs) {
+    helper.getSynchronizationContext().execute(
+        new Runnable() {
+          @Override
+          public void run() {
+            subchannel.updateAddresses(Collections.singletonList(addrs));
+          }
+        });
   }
 }

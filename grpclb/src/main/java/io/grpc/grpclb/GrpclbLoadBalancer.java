@@ -80,6 +80,7 @@ class GrpclbLoadBalancer extends LoadBalancer {
     checkNotNull(grpclbState, "grpclbState");
   }
 
+  @Deprecated
   @Override
   public void handleSubchannelState(Subchannel subchannel, ConnectivityStateInfo newState) {
     // grpclbState should never be null here since handleSubchannelState cannot be called while the
@@ -113,6 +114,13 @@ class GrpclbLoadBalancer extends LoadBalancer {
       recreateStates();
     }
     grpclbState.handleAddresses(newLbAddressGroups, newBackendServers);
+  }
+
+  @Override
+  public void requestConnection() {
+    if (grpclbState != null) {
+      grpclbState.requestConnection();
+    }
   }
 
   @VisibleForTesting

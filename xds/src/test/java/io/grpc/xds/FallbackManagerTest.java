@@ -21,6 +21,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.google.common.collect.ImmutableList;
 import io.grpc.Attributes;
 import io.grpc.ChannelLogger;
 import io.grpc.EquivalentAddressGroup;
@@ -29,12 +30,15 @@ import io.grpc.LoadBalancer.Helper;
 import io.grpc.LoadBalancer.ResolvedAddresses;
 import io.grpc.LoadBalancerProvider;
 import io.grpc.LoadBalancerRegistry;
+import io.grpc.Status;
+import io.grpc.Status.Code;
 import io.grpc.SynchronizationContext;
 import io.grpc.internal.FakeClock;
+import io.grpc.internal.GrpcAttributes;
 import io.grpc.internal.ServiceConfigUtil.LbConfig;
-import io.grpc.xds.XdsLbState.SubchannelStoreImpl;
 import io.grpc.xds.XdsLoadBalancer.FallbackManager;
-import java.util.ArrayList;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -43,6 +47,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
+import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -58,7 +63,7 @@ public class FallbackManagerTest {
   private final FakeClock fakeClock = new FakeClock();
   private final LoadBalancerRegistry lbRegistry = new LoadBalancerRegistry();
 
-  private final LoadBalancerProvider fakeLbProvider = new LoadBalancerProvider() {
+  private final LoadBalancerProvider fakeFallbackLbProvider = new LoadBalancerProvider() {
     @Override
     public boolean isAvailable() {
       return true;
@@ -71,12 +76,34 @@ public class FallbackManagerTest {
 
     @Override
     public String getPolicyName() {
-      return "test_policy";
+      return fallbackPolicy.getPolicyName();
     }
 
     @Override
     public LoadBalancer newLoadBalancer(Helper helper) {
-      return fakeLb;
+      return fakeFallbackLb;
+    }
+  };
+
+  private final LoadBalancerProvider fakeRoundRonbinLbProvider = new LoadBalancerProvider() {
+    @Override
+    public boolean isAvailable() {
+      return true;
+    }
+
+    @Override
+    public int getPriority() {
+      return 5;
+    }
+
+    @Override
+    public String getPolicyName() {
+      return "round_robin";
+    }
+
+    @Override
+    public LoadBalancer newLoadBalancer(Helper helper) {
+      return fakeRoundRobinLb;
     }
   };
 
@@ -91,7 +118,9 @@ public class FallbackManagerTest {
   @Mock
   private Helper helper;
   @Mock
-  private LoadBalancer fakeLb;
+  private LoadBalancer fakeRoundRobinLb;
+  @Mock
+  private LoadBalancer fakeFallbackLb;
   @Mock
   private ChannelLogger channelLogger;
 
@@ -104,9 +133,10 @@ public class FallbackManagerTest {
     doReturn(syncContext).when(helper).getSynchronizationContext();
     doReturn(fakeClock.getScheduledExecutorService()).when(helper).getScheduledExecutorService();
     doReturn(channelLogger).when(helper).getChannelLogger();
-    fallbackManager = new FallbackManager(helper, new SubchannelStoreImpl(), lbRegistry);
     fallbackPolicy = new LbConfig("test_policy", new HashMap<String, Void>());
-    lbRegistry.register(fakeLbProvider);
+    lbRegistry.register(fakeRoundRonbinLbProvider);
+    lbRegistry.register(fakeFallbackLbProvider);
+    fallbackManager = new FallbackManager(helper, lbRegistry);
   }
 
   @After
@@ -116,16 +146,20 @@ public class FallbackManagerTest {
 
   @Test
   public void useFallbackWhenTimeout() {
-    fallbackManager.maybeStartFallbackTimer();
-    List<EquivalentAddressGroup> eags = new ArrayList<>();
+    fallbackManager.startFallbackTimer();
+    List<EquivalentAddressGroup> eags = ImmutableList.of(
+        new EquivalentAddressGroup(ImmutableList.<SocketAddress>of(new InetSocketAddress(8080))));
     fallbackManager.updateFallbackServers(
         eags, Attributes.EMPTY, fallbackPolicy);
 
-    verify(fakeLb, never()).handleResolvedAddresses(ArgumentMatchers.any(ResolvedAddresses.class));
+    assertThat(fallbackManager.isInFallbackMode()).isFalse();
+    verify(fakeFallbackLb, never())
+        .handleResolvedAddresses(ArgumentMatchers.any(ResolvedAddresses.class));
 
     fakeClock.forwardTime(FALLBACK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
-    verify(fakeLb).handleResolvedAddresses(
+    assertThat(fallbackManager.isInFallbackMode()).isTrue();
+    verify(fakeFallbackLb).handleResolvedAddresses(
         ResolvedAddresses.newBuilder()
             .setAddresses(eags)
             .setAttributes(
@@ -138,9 +172,105 @@ public class FallbackManagerTest {
   }
 
   @Test
+  public void fallback_handleBackendsEagsOnly() {
+    fallbackManager.startFallbackTimer();
+    EquivalentAddressGroup eag0 = new EquivalentAddressGroup(
+        ImmutableList.<SocketAddress>of(new InetSocketAddress(8080)));
+    Attributes attributes = Attributes
+        .newBuilder()
+        .set(GrpcAttributes.ATTR_LB_ADDR_AUTHORITY, "this is a balancer address")
+        .build();
+    EquivalentAddressGroup eag1 = new EquivalentAddressGroup(
+        ImmutableList.<SocketAddress>of(new InetSocketAddress(8081)), attributes);
+    EquivalentAddressGroup eag2 = new EquivalentAddressGroup(
+        ImmutableList.<SocketAddress>of(new InetSocketAddress(8082)));
+    List<EquivalentAddressGroup> eags = ImmutableList.of(eag0, eag1, eag2);
+    fallbackManager.updateFallbackServers(
+        eags, Attributes.EMPTY, fallbackPolicy);
+
+    fakeClock.forwardTime(FALLBACK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+
+    assertThat(fallbackManager.isInFallbackMode()).isTrue();
+    verify(fakeFallbackLb).handleResolvedAddresses(
+        ResolvedAddresses.newBuilder()
+            .setAddresses(ImmutableList.of(eag0, eag2))
+            .setAttributes(
+                Attributes.newBuilder()
+                    .set(
+                        LoadBalancer.ATTR_LOAD_BALANCING_CONFIG,
+                        fallbackPolicy.getRawConfigValue())
+                    .build())
+            .build());
+  }
+
+  @Test
+  public void fallback_handleGrpclbAddresses() {
+    lbRegistry.deregister(fakeFallbackLbProvider);
+    fallbackPolicy = new LbConfig("grpclb", new HashMap<String, Void>());
+    lbRegistry.register(fakeFallbackLbProvider);
+
+    fallbackManager.startFallbackTimer();
+    EquivalentAddressGroup eag0 = new EquivalentAddressGroup(
+        ImmutableList.<SocketAddress>of(new InetSocketAddress(8080)));
+    Attributes attributes = Attributes
+        .newBuilder()
+        .set(GrpcAttributes.ATTR_LB_ADDR_AUTHORITY, "this is a balancer address")
+        .build();
+    EquivalentAddressGroup eag1 = new EquivalentAddressGroup(
+        ImmutableList.<SocketAddress>of(new InetSocketAddress(8081)), attributes);
+    EquivalentAddressGroup eag2 = new EquivalentAddressGroup(
+        ImmutableList.<SocketAddress>of(new InetSocketAddress(8082)));
+    List<EquivalentAddressGroup> eags = ImmutableList.of(eag0, eag1, eag2);
+    fallbackManager.updateFallbackServers(
+        eags, Attributes.EMPTY, fallbackPolicy);
+
+    fakeClock.forwardTime(FALLBACK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+
+    assertThat(fallbackManager.isInFallbackMode()).isTrue();
+    verify(fakeFallbackLb).handleResolvedAddresses(
+        ResolvedAddresses.newBuilder()
+            .setAddresses(eags)
+            .setAttributes(
+                Attributes.newBuilder()
+                    .set(
+                        LoadBalancer.ATTR_LOAD_BALANCING_CONFIG,
+                        fallbackPolicy.getRawConfigValue())
+                    .build())
+            .build());
+  }
+
+  @Test
+  public void fallback_onlyGrpclbAddresses_NoBackendAddress() {
+    lbRegistry.deregister(fakeFallbackLbProvider);
+    fallbackPolicy = new LbConfig("not_grpclb", new HashMap<String, Void>());
+    lbRegistry.register(fakeFallbackLbProvider);
+
+    fallbackManager.startFallbackTimer();
+    Attributes attributes = Attributes
+        .newBuilder()
+        .set(GrpcAttributes.ATTR_LB_ADDR_AUTHORITY, "this is a balancer address")
+        .build();
+    EquivalentAddressGroup eag1 = new EquivalentAddressGroup(
+        ImmutableList.<SocketAddress>of(new InetSocketAddress(8081)), attributes);
+    EquivalentAddressGroup eag2 = new EquivalentAddressGroup(
+        ImmutableList.<SocketAddress>of(new InetSocketAddress(8082)), attributes);
+    List<EquivalentAddressGroup> eags = ImmutableList.of(eag1, eag2);
+    fallbackManager.updateFallbackServers(
+        eags, Attributes.EMPTY, fallbackPolicy);
+
+    fakeClock.forwardTime(FALLBACK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+
+    assertThat(fallbackManager.isInFallbackMode()).isTrue();
+    ArgumentCaptor<Status> statusCaptor = ArgumentCaptor.forClass(Status.class);
+    verify(fakeFallbackLb).handleNameResolutionError(statusCaptor.capture());
+    assertThat(statusCaptor.getValue().getCode()).isEqualTo(Code.UNAVAILABLE);
+  }
+
+  @Test
   public void cancelFallback() {
-    fallbackManager.maybeStartFallbackTimer();
-    List<EquivalentAddressGroup> eags = new ArrayList<>();
+    fallbackManager.startFallbackTimer();
+    List<EquivalentAddressGroup> eags = ImmutableList.of(
+        new EquivalentAddressGroup(ImmutableList.<SocketAddress>of(new InetSocketAddress(8080))));
     fallbackManager.updateFallbackServers(
         eags, Attributes.EMPTY, fallbackPolicy);
 
@@ -148,6 +278,8 @@ public class FallbackManagerTest {
 
     fakeClock.forwardTime(FALLBACK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
-    verify(fakeLb, never()).handleResolvedAddresses(ArgumentMatchers.any(ResolvedAddresses.class));
+    assertThat(fallbackManager.isInFallbackMode()).isFalse();
+    verify(fakeFallbackLb, never())
+        .handleResolvedAddresses(ArgumentMatchers.any(ResolvedAddresses.class));
   }
 }

@@ -20,7 +20,7 @@
 set -e
 BRANCH=master
 # import VERSION from one of the google internal CLs
-VERSION=109d23a6648b1ac7723c4b2f125e913125bb9a84
+VERSION=89eb31bcbe2308bf1e9073620e843bf472363495
 GIT_REPO="https://github.com/envoyproxy/envoy.git"
 GIT_BASE_DIR=envoy
 SOURCE_PROTO_BASE_DIR=envoy/api
@@ -68,33 +68,6 @@ for file in "${FILES[@]}"
 do
   mkdir -p "$(dirname "${file}")"
   cp -p "${tmpdir}/${SOURCE_PROTO_BASE_DIR}/${file}" "${file}"
-done
-
-# DO NOT TOUCH! The following section is upstreamed with an internal script.
-
-# See google internal third_party/envoy/envoy-update.sh
-# ===========================================================================
-# Fix up proto imports and remove references to gogoproto.
-# ===========================================================================
-for f in "${FILES[@]}"
-do
-  commands=(
-    # Import mangling.
-    -e 's#import "gogoproto/gogo.proto";##'
-    # Remove references to gogo.proto extensions.
-    -e 's#option (gogoproto\.[a-z_]\+) = \(true\|false\);##'
-    -e 's#\(, \)\?(gogoproto\.[a-z_]\+) = \(true\|false\),\?##'
-    # gogoproto removal can result in empty brackets.
-    -e 's# \[\]##'
-    # gogoproto removal can result in four spaces on a line by itself.
-    -e '/^    $/d'
-  )
-  sed -i "${commands[@]}" "$f"
-
-  # gogoproto removal can leave a comma on the last element in a list.
-  # This needs to run separately after all the commands above have finished
-  # since it is multi-line and rewrites the output of the above patterns.
-  sed -i -e '$!N; s#\(.*\),\([[:space:]]*\];\)#\1\2#; t; P; D;' "$f"
 done
 popd
 

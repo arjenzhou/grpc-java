@@ -5,7 +5,7 @@ buildscript {
     }
     dependencies {
         classpath 'com.google.gradle:osdetector-gradle-plugin:1.4.0'
-        classpath 'ru.vyarus:gradle-animalsniffer-plugin:1.4.5'
+        classpath 'ru.vyarus:gradle-animalsniffer-plugin:1.5.0'
         classpath 'net.ltgt.gradle:gradle-errorprone-plugin:0.6'
         classpath "me.champeau.gradle:jmh-gradle-plugin:0.4.5"
         classpath 'me.champeau.gradle:japicmp-gradle-plugin:0.2.5'
@@ -31,7 +31,7 @@ subprojects {
     apply plugin: "net.ltgt.errorprone"
     if (rootProject.properties.get('errorProne', true)) {
         dependencies {
-            errorprone 'com.google.errorprone:error_prone_core:2.3.2'
+            errorprone 'com.google.errorprone:error_prone_core:2.3.3'
             errorproneJavac 'com.google.errorprone:javac:9+181-r4173-1'
 
             annotationProcessor 'com.google.guava:guava-beta-checker:1.0'
@@ -48,7 +48,7 @@ subprojects {
     }
 
     group = "io.grpc"
-    version = "1.21.0-SNAPSHOT" // CURRENT_GRPC_VERSION
+    version = "1.24.0-SNAPSHOT" // CURRENT_GRPC_VERSION
 
     sourceCompatibility = 1.7
     targetCompatibility = 1.7
@@ -106,12 +106,11 @@ subprojects {
         protocPluginBaseName = 'protoc-gen-grpc-java'
         javaPluginPath = "$rootDir/compiler/build/exe/java_plugin/$protocPluginBaseName$exeSuffix"
 
-        nettyVersion = '4.1.34.Final'
+        nettyVersion = '4.1.38.Final'
         googleauthVersion = '0.13.0'
         guavaVersion = '26.0-android'
-        protobufVersion = '3.7.1'
+        protobufVersion = '3.9.0'
         protocVersion = protobufVersion
-        protobufNanoVersion = '3.0.0-alpha-5'
         opencensusVersion = '0.21.0'
 
         configureProtoCompilation = {
@@ -183,11 +182,6 @@ subprojects {
             }
         }
 
-        def epoll_suffix = "";
-        if (osdetector.classifier in ["linux-x86_64"]) {
-            // The native code is only pre-compiled on certain platforms.
-            epoll_suffix = ":" + osdetector.classifier
-        }
         libraries = [
             android_annotations: "com.google.android:annotations:4.1.1.4",
             animalsniffer_annotations: "org.codehaus.mojo:animal-sniffer-annotations:1.17",
@@ -207,24 +201,23 @@ subprojects {
             opencensus_impl: "io.opencensus:opencensus-impl:${opencensusVersion}",
             opencensus_impl_lite: "io.opencensus:opencensus-impl-lite:${opencensusVersion}",
             instrumentation_api: 'com.google.instrumentation:instrumentation-api:0.4.3',
+            perfmark: 'io.perfmark:perfmark-api:0.17.0',
             protobuf: "com.google.protobuf:protobuf-java:${protobufVersion}",
             protobuf_lite: "com.google.protobuf:protobuf-lite:3.0.1",
             protoc_lite: "com.google.protobuf:protoc-gen-javalite:3.0.0",
-            protobuf_nano: "com.google.protobuf.nano:protobuf-javanano:${protobufNanoVersion}",
-            protoc_nano: "com.google.protobuf:protoc:3.5.1-1",
             protobuf_plugin: 'com.google.protobuf:protobuf-gradle-plugin:0.8.8',
             protobuf_util: "com.google.protobuf:protobuf-java-util:${protobufVersion}",
             lang: "org.apache.commons:commons-lang3:3.5",
 
             netty: "io.netty:netty-codec-http2:[${nettyVersion}]",
-            netty_epoll: "io.netty:netty-transport-native-epoll:${nettyVersion}" + epoll_suffix,
+            netty_epoll: "io.netty:netty-transport-native-epoll:${nettyVersion}:linux-x86_64",
             netty_proxy_handler: "io.netty:netty-handler-proxy:${nettyVersion}",
 
             // Keep the following references of tcnative version in sync whenever it's updated
             // SECURITY.md (multiple occurrences)
             // examples/example-tls/build.gradle
             // examples/example-tls/pom.xml
-            netty_tcnative: 'io.netty:netty-tcnative-boringssl-static:2.0.22.Final',
+            netty_tcnative: 'io.netty:netty-tcnative-boringssl-static:2.0.25.Final',
 
             conscrypt: 'org.conscrypt:conscrypt-openjdk-uber:1.0.1',
             re2j: 'com.google.re2j:re2j:1.2',
@@ -232,7 +225,7 @@ subprojects {
             // Test dependencies.
             junit: 'junit:junit:4.12',
             mockito: 'org.mockito:mockito-core:2.25.1',
-            truth: 'com.google.truth:truth:0.44',
+            truth: 'com.google.truth:truth:0.45',
             guava_testlib: "com.google.guava:guava-testlib:${guavaVersion}",
 
             // Benchmark dependencies
@@ -386,7 +379,6 @@ subprojects {
                             "grpc-stub",
                             "grpc-protobuf",
                             "grpc-protobuf-lite",
-                            "grpc-protobuf-nano"
                         ])) {
                             asNode().dependencies.'*'.findAll() { dep ->
                                 dep.artifactId.text() in ['grpc-api', 'grpc-core']
@@ -461,7 +453,6 @@ def publicApiSubprojects = [
     ':grpc-okhttp',
     ':grpc-protobuf',
     ':grpc-protobuf-lite',
-    ':grpc-protobuf-nano',
     ':grpc-stub',
     ':grpc-testing',
 ]

@@ -16,7 +16,10 @@
 
 package io.grpc.netty;
 
+import io.grpc.ChannelLogger;
+import io.grpc.netty.ProtocolNegotiators.ClientTlsHandler;
 import io.grpc.netty.ProtocolNegotiators.GrpcNegotiationHandler;
+import io.grpc.netty.ProtocolNegotiators.ProtocolNegotiationHandler;
 import io.grpc.netty.ProtocolNegotiators.WaitUntilActiveHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -29,6 +32,13 @@ import io.netty.util.AsciiString;
 public final class InternalProtocolNegotiators {
 
   private InternalProtocolNegotiators() {}
+
+  /**
+   * Returns the channel logger for the given channel context, or a Noop Logger if absent.
+   */
+  public static ChannelLogger negotiationLogger(ChannelHandlerContext ctx) {
+    return ProtocolNegotiators.negotiationLogger(ctx);
+  }
 
   /**
    * Buffers all writes until either {@link #writeBufferedAndRemove(ChannelHandlerContext)} or
@@ -84,5 +94,22 @@ public final class InternalProtocolNegotiators {
    */
   public static ChannelHandler grpcNegotiationHandler(GrpcHttp2ConnectionHandler next) {
     return new GrpcNegotiationHandler(next);
+  }
+
+  public static ChannelHandler clientTlsHandler(
+      ChannelHandler next, SslContext sslContext, String authority) {
+    return new ClientTlsHandler(next, sslContext, authority);
+  }
+
+  public static class ProtocolNegotiationHandler
+      extends ProtocolNegotiators.ProtocolNegotiationHandler {
+
+    protected ProtocolNegotiationHandler(ChannelHandler next, String negotiatorName) {
+      super(next, negotiatorName);
+    }
+
+    protected ProtocolNegotiationHandler(ChannelHandler next) {
+      super(next);
+    }
   }
 }

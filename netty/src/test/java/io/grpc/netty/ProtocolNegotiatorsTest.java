@@ -113,7 +113,7 @@ public class ProtocolNegotiatorsTest {
     @Override public void run() {}
   };
 
-  private static final int TIMEOUT_SECONDS = 5;
+  private static final int TIMEOUT_SECONDS = 60;
   @Rule public final TestRule globalTimeout = new DisableOnDebug(Timeout.seconds(TIMEOUT_SECONDS));
   @Rule public final ExpectedException thrown = ExpectedException.none();
 
@@ -169,6 +169,7 @@ public class ProtocolNegotiatorsTest {
       @Override
       public void channelActive(ChannelHandlerContext ctx) throws Exception {
         ctx.pipeline().addLast(handler);
+        ctx.pipeline().fireUserEventTriggered(ProtocolNegotiationEvent.DEFAULT);
         // do not propagate channelActive().
       }
     };
@@ -226,6 +227,7 @@ public class ProtocolNegotiatorsTest {
     assertEquals(1, latch.getCount());
 
     chan.connect(addr).sync();
+    chan.pipeline().fireUserEventTriggered(ProtocolNegotiationEvent.DEFAULT);
     assertTrue(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     assertNull(chan.pipeline().context(WaitUntilActiveHandler.class));
   }
@@ -571,6 +573,7 @@ public class ProtocolNegotiatorsTest {
         .connect(addr)
         .sync()
         .channel();
+    c.pipeline().fireUserEventTriggered(ProtocolNegotiationEvent.DEFAULT);
     SocketAddress localAddr = c.localAddress();
     ProtocolNegotiationEvent expectedEvent = ProtocolNegotiationEvent.DEFAULT
         .withAttributes(
@@ -642,9 +645,9 @@ public class ProtocolNegotiatorsTest {
     ChannelFuture write = c.writeAndFlush(NettyClientHandler.NOOP_MESSAGE);
     c.connect(addr);
 
-    boolean completed = gh.negotiated.await(5, TimeUnit.SECONDS);
+    boolean completed = gh.negotiated.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     if (!completed) {
-      assertTrue("failed to negotiated", write.await(1, TimeUnit.SECONDS));
+      assertTrue("failed to negotiated", write.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
       // sync should fail if we are in this block.
       write.sync();
       throw new AssertionError("neither wrote nor negotiated");
@@ -705,9 +708,9 @@ public class ProtocolNegotiatorsTest {
     ChannelFuture write = channel.writeAndFlush(NettyClientHandler.NOOP_MESSAGE);
     channel.connect(serverChannel.localAddress());
 
-    boolean completed = gh.negotiated.await(5, TimeUnit.SECONDS);
+    boolean completed = gh.negotiated.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     if (!completed) {
-      assertTrue("failed to negotiated", write.await(1, TimeUnit.SECONDS));
+      assertTrue("failed to negotiated", write.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
       // sync should fail if we are in this block.
       write.sync();
       throw new AssertionError("neither wrote nor negotiated");

@@ -18,7 +18,6 @@ def grpc_java_repositories(
         omit_com_google_protobuf = False,
         omit_com_google_protobuf_java = False,
         omit_com_google_protobuf_javalite = False,
-        omit_com_google_protobuf_nano_protobuf_javanano = False,
         omit_com_google_truth_truth = False,
         omit_com_squareup_okhttp = False,
         omit_com_squareup_okio = False,
@@ -36,6 +35,7 @@ def grpc_java_repositories(
         omit_io_netty_tcnative_boringssl_static = False,
         omit_io_opencensus_api = False,
         omit_io_opencensus_grpc_metrics = False,
+        omit_io_perfmark = False,
         omit_javax_annotation = False,
         omit_junit_junit = False,
         omit_net_zlib = False,
@@ -70,8 +70,6 @@ def grpc_java_repositories(
         fail("omit_com_google_protobuf_java is no longer supported and must be not be passed to grpc_java_repositories()")
     if not omit_com_google_protobuf_javalite:
         com_google_protobuf_javalite()
-    if not omit_com_google_protobuf_nano_protobuf_javanano:
-        com_google_protobuf_nano_protobuf_javanano()
     if not omit_com_google_truth_truth:
         com_google_truth_truth()
     if not omit_com_squareup_okhttp:
@@ -106,6 +104,8 @@ def grpc_java_repositories(
         io_opencensus_api()
     if not omit_io_opencensus_grpc_metrics:
         io_opencensus_grpc_metrics()
+    if not omit_io_perfmark:
+        io_perfmark()
     if not omit_javax_annotation:
         javax_annotation()
     if not omit_junit_junit:
@@ -124,10 +124,6 @@ def grpc_java_repositories(
     native.bind(
         name = "gson",
         actual = "@com_google_code_gson_gson//jar",
-    )
-    native.bind(
-        name = "zlib",
-        actual = "@net_zlib//:zlib",
     )
     native.bind(
         name = "error_prone_annotations",
@@ -199,9 +195,9 @@ def com_google_code_gson():
 def com_google_errorprone_error_prone_annotations():
     jvm_maven_import_external(
         name = "com_google_errorprone_error_prone_annotations",
-        artifact = "com.google.errorprone:error_prone_annotations:2.3.2",
+        artifact = "com.google.errorprone:error_prone_annotations:2.3.3",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "357cd6cfb067c969226c442451502aee13800a24e950fdfde77bcdb4565a668d",
+        artifact_sha256 = "ec59f1b702d9afc09e8c3929f5c42777dec623a6ea2731ac694332c7d7680f5a",
         licenses = ["notice"],  # Apache 2.0
     )
 
@@ -239,9 +235,9 @@ def com_google_protobuf():
     # This statement defines the @com_google_protobuf repo.
     http_archive(
         name = "com_google_protobuf",
-        sha256 = "f976a4cd3f1699b6d20c1e944ca1de6754777918320c719742e1674fcf247b7e",
-        strip_prefix = "protobuf-3.7.1",
-        urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.7.1.zip"],
+        sha256 = "8eb5ca331ab8ca0da2baea7fc0607d86c46c80845deca57109a5d637ccb93bb4",
+        strip_prefix = "protobuf-3.9.0",
+        urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.9.0.zip"],
     )
 
 def com_google_protobuf_javalite():
@@ -253,21 +249,12 @@ def com_google_protobuf_javalite():
         urls = ["https://github.com/google/protobuf/archive/384989534b2246d413dbcd750744faab2607b516.zip"],
     )
 
-def com_google_protobuf_nano_protobuf_javanano():
-    jvm_maven_import_external(
-        name = "com_google_protobuf_nano_protobuf_javanano",
-        artifact = "com.google.protobuf.nano:protobuf-javanano:3.0.0-alpha-5",
-        server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "6d30f1e667a8952e1c90a0a125f0ce0edf84d6b1d51c91d8555c4fb549e3d7a1",
-        licenses = ["notice"],  # BSD 2-clause
-    )
-
 def com_google_truth_truth():
     jvm_maven_import_external(
         name = "com_google_truth_truth",
-        artifact = "com.google.truth:truth:0.44",
+        artifact = "com.google.truth:truth:0.45",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "a9e6796786c9c77a5fe19b08e72fe0a620d53166df423d8861af9ebef4dc4247",
+        artifact_sha256 = "0f7dced2a16e55a77e44fc3ff9c5be98d4bf4bb30abc18d78ffd735df950a69f",
         licenses = ["notice"],  # Apache 2.0
     )
 
@@ -300,99 +287,99 @@ def io_grpc_grpc_proto():
 def io_netty_buffer():
     jvm_maven_import_external(
         name = "io_netty_netty_buffer",
-        artifact = "io.netty:netty-buffer:4.1.34.Final",
+        artifact = "io.netty:netty-buffer:4.1.38.Final",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "39dfe88df8505fd01fbf9c1dbb6b6fa9b0297e453c3dc4ce039ea578aea2eaa3",
+        artifact_sha256 = "a3dcb49108f83b195e66cdad70b2d4a127c17f1be7f5b228a88ce18908c30b3e",
         licenses = ["notice"],  # Apache 2.0
     )
 
 def io_netty_codec():
     jvm_maven_import_external(
         name = "io_netty_netty_codec",
-        artifact = "io.netty:netty-codec:4.1.34.Final",
+        artifact = "io.netty:netty-codec:4.1.38.Final",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "52e9eeb3638a8ed0911c72a508c05fa4f9d3391125eae46f287d3a8a0776211d",
+        artifact_sha256 = "8a4cb96e2131eeb8a824014f0ee338b11c6041405446acf73181199ed05744ac",
         licenses = ["notice"],  # Apache 2.0
     )
 
 def io_netty_codec_http():
     jvm_maven_import_external(
         name = "io_netty_netty_codec_http",
-        artifact = "io.netty:netty-codec-http:4.1.34.Final",
+        artifact = "io.netty:netty-codec-http:4.1.38.Final",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "5df5556ef6b0e7ce7c72a359e4ca774fcdf8d8fe12f0b6332715eaa44cfe41f8",
+        artifact_sha256 = "b35c4ac78ed3aaefeb782965ce9f22901e5302bf5e75b75fbed79434ce007e8c",
         licenses = ["notice"],  # Apache 2.0
     )
 
 def io_netty_codec_http2():
     jvm_maven_import_external(
         name = "io_netty_netty_codec_http2",
-        artifact = "io.netty:netty-codec-http2:4.1.34.Final",
+        artifact = "io.netty:netty-codec-http2:4.1.38.Final",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "319f66f3ab0d3aac3477febf19c259990ee8c639fc7da8822dfa58e7dab1bdcf",
+        artifact_sha256 = "7e2d792407d2da34d3338a3e8f8ed421570fdbf845941b8ee0aa952fe0e07026",
         licenses = ["notice"],  # Apache 2.0
     )
 
 def io_netty_codec_socks():
     jvm_maven_import_external(
         name = "io_netty_netty_codec_socks",
-        artifact = "io.netty:netty-codec-socks:4.1.34.Final",
+        artifact = "io.netty:netty-codec-socks:4.1.38.Final",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "9c4ff58b648193942654db20f172d017441625754b902394f620f04074830346",
+        artifact_sha256 = "16d932d76d06992923ce640609d297fe35d9f7b219ea5f0514a4259f1f1f2146",
         licenses = ["notice"],  # Apache 2.0
     )
 
 def io_netty_common():
     jvm_maven_import_external(
         name = "io_netty_netty_common",
-        artifact = "io.netty:netty-common:4.1.34.Final",
+        artifact = "io.netty:netty-common:4.1.38.Final",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "122931117eacf370b054d0e8a2411efa81de4956a6c3f938b0f0eb915969a425",
+        artifact_sha256 = "710df7c27fe5ba4b15689ae10668cd10ab3b618a1291f3a47b2cc292a0fa67da",
         licenses = ["notice"],  # Apache 2.0
     )
 
 def io_netty_handler():
     jvm_maven_import_external(
         name = "io_netty_netty_handler",
-        artifact = "io.netty:netty-handler:4.1.34.Final",
+        artifact = "io.netty:netty-handler:4.1.38.Final",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "035616801fe9894ca2490832cf9976536dac740f41e90de1cdd4ba46f04263d1",
+        artifact_sha256 = "b49b57dbdc88a2c77e3ea9b9d00d3136f28771e059b74a7be7458d7a86bfccd1",
         licenses = ["notice"],  # Apache 2.0
     )
 
 def io_netty_handler_proxy():
     jvm_maven_import_external(
         name = "io_netty_netty_handler_proxy",
-        artifact = "io.netty:netty-handler-proxy:4.1.34.Final",
+        artifact = "io.netty:netty-handler-proxy:4.1.38.Final",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "f506c6acb97b3e0b0795cf9f0971d80bbab7c17086312fa225b98ccc94be6dff",
+        artifact_sha256 = "9dab309a0422dd9858f431d503b58b854b37d2545c50ad7b4771f34d2288e5c0",
         licenses = ["notice"],  # Apache 2.0
     )
 
 def io_netty_resolver():
     jvm_maven_import_external(
         name = "io_netty_netty_resolver",
-        artifact = "io.netty:netty-resolver:4.1.34.Final",
+        artifact = "io.netty:netty-resolver:4.1.38.Final",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "774221ed4c130b532865770b10630bc12d0d400127da617ee0ac8de2a7ac2097",
+        artifact_sha256 = "3692c12a0035e566d5cd1dc1529d4f61725304c5e88817ae78b5c2f7f6d86cad",
         licenses = ["notice"],  # Apache 2.0
     )
 
 def io_netty_tcnative_boringssl_static():
     jvm_maven_import_external(
         name = "io_netty_netty_tcnative_boringssl_static",
-        artifact = "io.netty:netty-tcnative-boringssl-static:2.0.22.Final",
+        artifact = "io.netty:netty-tcnative-boringssl-static:2.0.25.Final",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "382fef183d2dbb991e2c4ac8c9749673aa90ca1ce3cebf3301533beb664bf92f",
+        artifact_sha256 = "96d9c14ab4c47cbad7fec9bdb083917db971d3754d6c7fa89f958bc719e230ed",
         licenses = ["notice"],  # Apache 2.0
     )
 
 def io_netty_transport():
     jvm_maven_import_external(
         name = "io_netty_netty_transport",
-        artifact = "io.netty:netty-transport:4.1.34.Final",
+        artifact = "io.netty:netty-transport:4.1.38.Final",
         server_urls = ["http://central.maven.org/maven2"],
-        artifact_sha256 = "2b3f7d3a595101def7d411793a675bf2a325964475fd7bdbbe448e908de09445",
+        artifact_sha256 = "5f826976585a49aae9b495290125a60a59dc6887fbe4c70da3182a83fb8bfa88",
         licenses = ["notice"],  # Apache 2.0
     )
 
@@ -411,6 +398,15 @@ def io_opencensus_grpc_metrics():
         artifact = "io.opencensus:opencensus-contrib-grpc-metrics:0.21.0",
         server_urls = ["http://central.maven.org/maven2"],
         artifact_sha256 = "29fc79401082301542cab89d7054d2f0825f184492654c950020553ef4ff0ef8",
+        licenses = ["notice"],  # Apache 2.0
+    )
+
+def io_perfmark():
+    jvm_maven_import_external(
+        name = "io_perfmark_perfmark_api",
+        artifact = "io.perfmark:perfmark-api:0.17.0",
+        server_urls = ["http://central.maven.org/maven2"],
+        artifact_sha256 = "816c11409b8a0c6c9ce1cda14bed526e7b4da0e772da67c5b7b88eefd41520f9",
         licenses = ["notice"],  # Apache 2.0
     )
 

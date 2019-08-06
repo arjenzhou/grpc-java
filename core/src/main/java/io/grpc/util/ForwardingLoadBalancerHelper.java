@@ -22,11 +22,13 @@ import io.grpc.ChannelLogger;
 import io.grpc.ConnectivityState;
 import io.grpc.EquivalentAddressGroup;
 import io.grpc.ExperimentalApi;
+import io.grpc.LoadBalancer.CreateSubchannelArgs;
 import io.grpc.LoadBalancer.Subchannel;
 import io.grpc.LoadBalancer.SubchannelPicker;
 import io.grpc.LoadBalancer;
 import io.grpc.ManagedChannel;
 import io.grpc.NameResolver;
+import io.grpc.NameResolverRegistry;
 import io.grpc.SynchronizationContext;
 import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
@@ -38,11 +40,18 @@ public abstract class ForwardingLoadBalancerHelper extends LoadBalancer.Helper {
    */
   protected abstract LoadBalancer.Helper delegate();
 
+  @Deprecated
   @Override
   public Subchannel createSubchannel(List<EquivalentAddressGroup> addrs, Attributes attrs) {
     return delegate().createSubchannel(addrs, attrs);
   }
 
+  @Override
+  public Subchannel createSubchannel(CreateSubchannelArgs args) {
+    return delegate().createSubchannel(args);
+  }
+
+  @Deprecated
   @Override
   public void updateSubchannelAddresses(
       Subchannel subchannel, List<EquivalentAddressGroup> addrs) {
@@ -105,6 +114,16 @@ public abstract class ForwardingLoadBalancerHelper extends LoadBalancer.Helper {
   @Override
   public ChannelLogger getChannelLogger() {
     return delegate().getChannelLogger();
+  }
+
+  @Override
+  public NameResolver.Args getNameResolverArgs() {
+    return delegate().getNameResolverArgs();
+  }
+
+  @Override
+  public NameResolverRegistry getNameResolverRegistry() {
+    return delegate().getNameResolverRegistry();
   }
 
   @Override

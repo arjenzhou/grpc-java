@@ -18,7 +18,6 @@ package io.grpc.xds;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import com.google.common.collect.ImmutableList;
 import io.grpc.Attributes;
 import io.grpc.ConnectivityStateInfo;
 import io.grpc.EquivalentAddressGroup;
@@ -26,11 +25,11 @@ import io.grpc.LoadBalancer.Helper;
 import io.grpc.LoadBalancer.Subchannel;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
+import io.grpc.internal.BackoffPolicy;
+import io.grpc.internal.GrpcUtil;
 import io.grpc.internal.ServiceConfigUtil.LbConfig;
 import io.grpc.xds.XdsComms.AdsStreamCallback;
-import java.net.SocketAddress;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 import javax.annotation.Nullable;
 
 /**
@@ -49,34 +48,35 @@ import javax.annotation.Nullable;
  */
 class XdsLbState {
 
-  private static final Attributes.Key<AtomicReference<ConnectivityStateInfo>> STATE_INFO =
-      Attributes.Key.create("io.grpc.xds.XdsLoadBalancer.stateInfo");
   final String balancerName;
 
   @Nullable
   final LbConfig childPolicy;
 
-  private final SubchannelStore subchannelStore;
+  private final LocalityStore localityStore;
   private final Helper helper;
+  private final ManagedChannel channel;
   private final AdsStreamCallback adsStreamCallback;
+  private final BackoffPolicy.Provider backoffPolicyProvider;
 
   @Nullable
   private XdsComms xdsComms;
 
-
   XdsLbState(
       String balancerName,
       @Nullable LbConfig childPolicy,
-      @Nullable XdsComms xdsComms,
       Helper helper,
-      SubchannelStore subchannelStore,
-      AdsStreamCallback adsStreamCallback) {
+      LocalityStore localityStore,
+      ManagedChannel channel,
+      AdsStreamCallback adsStreamCallback,
+      BackoffPolicy.Provider backoffPolicyProvider) {
     this.balancerName = checkNotNull(balancerName, "balancerName");
     this.childPolicy = childPolicy;
-    this.xdsComms = xdsComms;
     this.helper = checkNotNull(helper, "helper");
-    this.subchannelStore = checkNotNull(subchannelStore, "subchannelStore");
+    this.localityStore = checkNotNull(localityStore, "localityStore");
+    this.channel = checkNotNull(channel, "channel");
     this.adsStreamCallback = checkNotNull(adsStreamCallback, "adsStreamCallback");
+    this.backoffPolicyProvider = checkNotNull(backoffPolicyProvider, "backoffPolicyProvider");
   }
 
   final void handleResolvedAddressGroups(
@@ -86,93 +86,30 @@ class XdsLbState {
     if (xdsComms != null) {
       xdsComms.refreshAdsStream();
     } else {
-      // ** This is wrong **
-      // FIXME: use name resolver to resolve addresses for balancerName, and create xdsComms in
-      // name resolver listener callback.
-      // TODO: consider pass a fake EAG as a static final field visible to tests and verify
-      // createOobChannel() with this EAG in tests.
-      ManagedChannel oobChannel = helper.createOobChannel(
-          new EquivalentAddressGroup(ImmutableList.<SocketAddress>of(new SocketAddress() {
-          })),
-          balancerName);
-      xdsComms = new XdsComms(oobChannel, helper, adsStreamCallback);
+      // TODO(zdapeng): pass a helper that has the right ChannelLogger for the oobChannel
+      xdsComms = new XdsComms(
+          channel, helper, adsStreamCallback, localityStore, backoffPolicyProvider,
+          GrpcUtil.STOPWATCH_SUPPLIER);
     }
 
     // TODO: maybe update picker
   }
 
-
   final void handleNameResolutionError(Status error) {
-    if (!subchannelStore.hasNonDropBackends()) {
-      // TODO: maybe update picker with transient failure
-    }
+    // NO-OP?
   }
 
   final void handleSubchannelState(Subchannel subchannel, ConnectivityStateInfo newState) {
     // TODO: maybe update picker
+    localityStore.handleSubchannelState(subchannel, newState);
   }
 
-  /**
-   * Shuts down subchannels and child loadbalancers, and cancels retry timer.
-   */
-  void shutdown() {
-    // TODO: cancel retry timer
-    // TODO: shutdown child balancers
-    subchannelStore.shutdown();
-  }
-
-  @Nullable
-  final XdsComms shutdownAndReleaseXdsComms() {
-    shutdown();
-    XdsComms xdsComms = this.xdsComms;
-    this.xdsComms = null;
-    return xdsComms;
-  }
-
-  /**
-   * Manages EAG and locality info for a collection of subchannels, not including subchannels
-   * created by the fallback balancer.
-   */
-  static final class SubchannelStoreImpl implements SubchannelStore {
-
-    SubchannelStoreImpl() {}
-
-    @Override
-    public boolean hasReadyBackends() {
-      // TODO: impl
-      return false;
+  ManagedChannel shutdownAndReleaseChannel(String message) {
+    localityStore.reset();
+    if (xdsComms != null) {
+      xdsComms.shutdownLbRpc(message);
+      xdsComms = null;
     }
-
-    @Override
-    public boolean hasNonDropBackends() {
-      // TODO: impl
-      return false;
-    }
-
-
-    @Override
-    public boolean hasSubchannel(Subchannel subchannel) {
-      // TODO: impl
-      return false;
-    }
-
-    @Override
-    public void shutdown() {
-      // TODO: impl
-    }
-  }
-
-  /**
-   * The interface of {@link XdsLbState.SubchannelStoreImpl} that is convenient for testing.
-   */
-  public interface SubchannelStore {
-
-    boolean hasReadyBackends();
-
-    boolean hasNonDropBackends();
-
-    boolean hasSubchannel(Subchannel subchannel);
-
-    void shutdown();
+    return channel;
   }
 }
